@@ -21,8 +21,11 @@ class MusicGenerator(nn.Module):
 
 
 # Function to convert audio file to spectrogram
-def audio_to_spectrogram(file_path, input_size):
-    audio = AudioSegment.from_file(file_path)
+def audio_to_spectrogram(file_path, input_size, mp3):
+    if mp3:
+        audio = AudioSegment.from_mp3(file_path)
+    else: 
+        audio = AudioSegment.from_wav(file_path)
     samples = audio.get_array_of_samples()
 
     # Normalize samples to the range [0, 1]
@@ -34,14 +37,14 @@ def audio_to_spectrogram(file_path, input_size):
 
 
 # Function to generate input and target sequences from audio file
-def generate_data_from_audio(file_path, seq_length, input_size, output_size):
-    spectrogram = audio_to_spectrogram(file_path)
-    spectrogram = torch.tensor(spectrogram).unsqueeze(0)  # Add batch dimension
+def generate_data_from_audio(file_path, seq_length, input_size, output_size, mp3):
+    spectrogram = audio_to_spectrogram(file_path, input_size, mp3)
+    spectrogram = torch.tensor(spectrogram)
 
     # Assuming the spectrogram has sufficient length for the sequence
     input_sequence = spectrogram[:, :seq_length, :input_size]
     target_sequence = spectrogram[:, :seq_length, :output_size]
-
+    
     return input_sequence, target_sequence
 
 
@@ -75,32 +78,61 @@ optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
 # Training loop
 for epoch in range(num_epochs):
+    total_loss = 0
     for file_name in os.listdir(audio_directory):
-        if file_name.endswith(".mp3") or file_name.endswith(".wav"):
-            audio_file_path = os.path.join(audio_directory, file_name)
-            input_seq = audio_to_spectrogram(audio_file_path, input_size)
-            target_seq = (
-                input_seq.clone()
-            )  # For simplicity, using the same sequence as the target
+        if file_name.endswith(".wav"):
+            try:
+                audio_file_path = "data\\" + file_name
+                input_seq, target_seq = generate_data_from_audio(
+                    audio_file_path, seq_length, input_size, output_size, False
+                )
 
-            # Move input and target sequences to the GPU
-            input_seq, target_seq = input_seq.to(device), target_seq.to(device)
+                # Move input and target sequences to the GPU
+                input_seq, target_seq = input_seq.to(device), target_seq.to(device)
 
-            # Forward pass
-            output = model(input_seq)
+                # Forward pass
+                output = model(input_seq)
 
-            # Compute loss
-            loss = criterion(
-                output, target_seq
-            )  # RuntimeError: The size of tensor a (15) must match the size of tensor b (25) at non-singleton dimension 2
+                # Compute loss
+                loss = criterion(output, target_seq)
 
-            # Backward pass and optimization
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+                # Backward pass and optimization
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-    # Print the loss every epoch
-    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}")
+                total_loss += loss.item()
+            except Exception as e:
+                print(f"Error processing {file_name}: {e}")
+        else:
+            try:
+                audio_file_path = "data\\" + file_name
+                input_seq, target_seq = generate_data_from_audio(
+                    audio_file_path, seq_length, input_size, output_size, True
+                )
+
+                # Move input and target sequences to the GPU
+                input_seq, target_seq = input_seq.to(device), target_seq.to(device)
+
+                # Forward pass
+                output = model(input_seq)
+
+                # Compute loss
+                loss = criterion(output, target_seq)
+
+                # Backward pass and optimization
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item()
+            except Exception as e:
+                print(f"Error processing {file_name}: {e}")
+
+    # Print the average loss for the epoch
+    average_loss = total_loss / len(os.listdir(audio_directory))
+    print(f"Epoch [{epoch+1}/{num_epochs}], Average Loss: {average_loss:.4f}")
+
 
 # Generate a longer music sequence using the trained model
 generated_input = (
